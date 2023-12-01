@@ -19,12 +19,12 @@ class Simulator:
         self.model_acc.eval()
         self.model_data.eval()
 
-    def simulate(self, initial_state, n_sims=1000, game_length=2000, store_full_sim=False):
+    def simulate(self, initial_state, n_sims=1000, game_length=2000, store_full_sim=False, disable_tqdm=False):
         init_feature_tensor = handle_initial_state(initial_state, n_sims)
         feature_tensor = init_feature_tensor.to(self.device) # shape: (1000, 42)
         if store_full_sim:
             all_sims_data = [init_feature_tensor]
-        for k in tqdm(range(game_length)):
+        for k in tqdm(range(game_length), disable=disable_tqdm):
             with torch.no_grad():
                 pred_type_probs = self.model_type(feature_tensor) # shape: (1000, 33)
                 pred_type = torch.multinomial(pred_type_probs, 1) # shape: (1000, 1)

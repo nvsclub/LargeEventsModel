@@ -102,16 +102,20 @@ def compute_features(df):
     df['type_id'] = df['type_name'].map(EVENT_TYPE_MAP)
     df = df.dropna(subset=['subtype_id']).copy()
 
+    df['player_is_next_1'] = np.where((df.type_name == 'pass') & (df.team_name == df.team_name.shift(-1)), df.player_name.shift(-1), '')
+    df['receiving_player_name'] = np.where((df.type_name == 'pass') & (df.team_name == df.team_name.shift(-2)), df.player_name.shift(-2), '')
+    df.loc[df['receiving_player_name'] == '', 'receiving_player_name'] = df.loc[df['receiving_player_name'] == '', 'player_is_next_1']
+
     # A possession starts with a pass and ends when a successful pass from the opponent is made
     # or when the ball goes out of play
-    start_new_possession = (((df['type_name'] == 'pass') * df['accurate'] + (df['type_name'] == 'free_kick')) * df.team_id).replace(0, np.NaN).fillna(method='ffill')
+    start_new_possession = (((df['type_name'] == 'pass') * df['accurate'] + (df['type_name'] == 'free_kick')) * df.team_id).replace(0, np.NaN).ffill()
     start_new_possession = (start_new_possession != start_new_possession.shift(1)).cumsum()
     start_new_possession = start_new_possession + ((df['type_name'] == 'interruption') | (df['type_name'] == 'foul')).shift(1).fillna(0).cumsum()
     df['possession_id'] = start_new_possession
-    df['possession_type_name'] = (df['possession_id'].diff(1).fillna(1) * df['type_name']).replace('', np.NaN).fillna(method='ffill')
+    df['possession_type_name'] = (df['possession_id'].diff(1).fillna(1) * df['type_name']).replace('', np.NaN).ffill()
     df['possession_type_id'] = df['possession_type_name'].map(EVENT_TYPE_MAP)
-    df['possession_team_id'] = (df['possession_id'].diff(1).fillna(1) * df['team_id']).replace(0, np.NaN).fillna(method='ffill')
-    df['possession_start_time'] = (df['possession_id'].diff(1).fillna(1) * df['absolute_sec']).replace(0, np.NaN).fillna(method='ffill')
+    df['possession_team_id'] = (df['possession_id'].diff(1).fillna(1) * df['team_id']).replace(0, np.NaN).ffill()
+    df['possession_start_time'] = (df['possession_id'].diff(1).fillna(1) * df['absolute_sec']).replace(0, np.NaN).ffill()
 
     for i in range(1, 3):
         df[f'previous_action_type_id_{i}'] = df['type_id'].shift(i)
@@ -124,8 +128,8 @@ def compute_features(df):
         df[f'previous_action_x_displacement_{i}'] = df['x'] - df[f'previous_action_x_{i}']
 
     df['possession_start_is_same_team'] = (df['possession_team_id'] == df['team_id']).astype(int)
-    df['possession_start_action_x'] = (df['possession_id'].diff(1).fillna(1) * df['x']).replace(0, np.NaN).fillna(method='ffill')
-    df['possession_start_action_y'] = (df['possession_id'].diff(1).fillna(1) * df['y']).replace(0, np.NaN).fillna(method='ffill')
+    df['possession_start_action_x'] = (df['possession_id'].diff(1).fillna(1) * df['x']).replace(0, np.NaN).ffill()
+    df['possession_start_action_y'] = (df['possession_id'].diff(1).fillna(1) * df['y']).replace(0, np.NaN).ffill()
     df['possession_start_time_since'] = df['absolute_sec'] - df['possession_start_time']
     df['possession_start_x_displacement'] = df['x'] - df['possession_start_action_x']
 
@@ -325,9 +329,9 @@ def encode_targets_v3(df):
     df_enc_data = df_enc[df_enc.columns[~df_enc.columns.str.contains('next_action_type') & ~df_enc.columns.str.contains('next_action_accurate') & ~df_enc.columns.str.contains('next_action_goal') & ~df_enc.columns.str.contains('team_False')]]
 
     df_y = {
-        'TYPE': df_enc_type,
-        'ACC': df_enc_acc,
-        'DATA': df_enc_data
+        'TYPE': df_enc_type.reset_index(drop=True),
+        'ACC': df_enc_acc.reset_index(drop=True),
+        'DATA': df_enc_data.reset_index(drop=True)
     }
 
     return df_y
@@ -364,7 +368,7 @@ def normalize_and_encode_features_v3(df):
         'DATA': enc_type_vars + ['period', 'minute', 'x', 'y', 'is_home_team', 'accurate', 'goal', 'home_score', 'away_score'] + enc_next_type_vars + ['next_action_accurate', 'next_action_goal']
     }
 
-    return df, features, features_model
+    return df.reset_index(drop=True), features, features_model
 
 def load_model_training_data_template(train_sets, optimization_sets, test_sets):
     df_train = []

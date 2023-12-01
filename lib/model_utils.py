@@ -90,9 +90,33 @@ class MultiLayerBinaryClassifier(nn.Module):
     
     def forward(self, x):
         return self.model(x)
+    
+class TransferModel(nn.Module):
+    def __init__(self, base_model):
+        super(TransferModel, self).__init__()
+
+        modules = list(base_model.children())[0][:-1]
+        self.base_layers = nn.Sequential(*modules)
+        if 'ReLU' in str(self.base_layers[-2]):
+            self.transfer_activation = nn.ReLU()
+        elif 'Sigmoid' in str(self.base_layers[-2]):
+            self.transfer_activation = nn.Sigmoid()
+        else:
+            self.transfer_activation = nn.Sigmoid()
+
+        output_size = list(base_model.children())[0][-2].out_features
+        self.transfer_layer = nn.Linear(output_size, output_size)
+        self.output_sigmoid = nn.Sigmoid()
+
+    def forward(self, x):
+        x = self.base_layers(x)
+        x = self.transfer_activation(x)
+        x = self.transfer_layer(x)
+        x = self.output_sigmoid(x)
+        return x
 
 
-def train(model, dataloader, criterion, optimizer, device, weights=None):
+def train(model, dataloader, criterion, optimizer, device, weights=None, l1_lambda=None):
     model.train()
     running_loss = 0.0
 
@@ -108,6 +132,13 @@ def train(model, dataloader, criterion, optimizer, device, weights=None):
             loss = criterion(outputs[:,0], labels[:,0]) * weights[0]
             for i in range(1, len(weights)):
                 loss += criterion(outputs[:,i], labels[:,i]) * weights[i]
+
+        if l1_lambda != None:
+            l1_reg = torch.tensor(0.).to(device)
+            for param in model.parameters():
+                l1_reg += torch.norm(param, 1)
+            loss += l1_lambda * l1_reg
+
         loss.backward()
         optimizer.step()
 
@@ -144,6 +175,8 @@ def evaluate_log_loss(model, dataloader, device):
             outputs = model(inputs).cpu().numpy()
             true_labels.extend(labels.cpu().numpy().tolist())
             predicted_probs.extend(outputs.tolist())
+
+        # THE ERROR IS HERE
 
     epoch_log_loss = log_loss(true_labels, predicted_probs)
     return epoch_log_loss
